@@ -17,6 +17,7 @@ dependencies = [
     "matplotlib>=3.8",
     "pyyaml>=6.0",
     "seaborn>=0.13",
+    "mat73>=0.65",
 ]
 
 [project.optional-dependencies]
@@ -47,8 +48,14 @@ testpaths = ["tests"]
 addopts = "-ra -q"
 
 [tool.ruff]
-line-length = 100
+line-length = 120
 target-version = "py311"
+extend-exclude = ["notebooks/"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B"]
+
+[dependency-groups]
+dev = [
+    "nbstripout>=0.9.1",
+]

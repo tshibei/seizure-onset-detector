@@ -1,10 +1,12 @@
 """Data loading and preprocessing for iEEG recordings."""
 import glob
+import json
 import os
 import re
-import scipy.io
+
 import numpy as np
-import json
+import scipy.io
+
 
 def list_patients(data_dir: str):
     """List patients with at least one recording file in data_dir."""
@@ -27,27 +29,20 @@ def list_recordings(data_dir: str, patient_id: str):
     return sorted(recordings, key=lambda r: int(r[:-1]))
 
 def load_info(data_dir: str, patient_id: str):
-    """Load info file for a patient. Returns a dict with keys 'fs', 'seizure_begin', 'seizure_end'."""
+    """Load info file for a patient. Returns (fs, seizure_intervals)."""
     info_file = f"{data_dir}/ID{patient_id}_info.mat"
     loaded_info = scipy.io.loadmat(info_file)
 
     fs = float(np.asarray(loaded_info["fs"]).flatten()[0])
     seizure_begin = np.asarray(loaded_info["seizure_begin"]).flatten()
     seizure_end = np.asarray(loaded_info["seizure_end"]).flatten()
-    seizure_intervals = list(zip(seizure_begin, seizure_end))
+    seizure_intervals = list(zip(seizure_begin, seizure_end, strict=True))
     return fs, seizure_intervals
 
 def load_recording(data_dir: str, patient_id: str, recording_id: str):
-    """
-    Load an iEEG recording. Returns signal_array.
-    
-    - signal_array: numpy array of shape (n_channels, n_samples)
-    """
+    """Load an iEEG recording. Returns array of shape (n_channels, n_samples)."""
     file = f"{data_dir}/ID{patient_id}_{recording_id}.mat"
-
-    # The .mat file from SWEC-ETHZ contains a variable 'EEG' which is a 2D array of shape (n_channels, n_samples)
-    signal_array = scipy.io.loadmat(file)['EEG'] # shape (n_channels, n_samples)
-    return signal_array
+    return scipy.io.loadmat(file)["EEG"]
 
 def load_cohort(cohort_file="scripts/download_manifest.json"):
     """Load the manifest. Keys are patient IDs (no 'ID' prefix), values are recording-hour ints."""
@@ -56,7 +51,7 @@ def load_cohort(cohort_file="scripts/download_manifest.json"):
     return {key.removeprefix("ID"): hours for key, hours in raw.items()}
 
 def window_signal(signal, fs, window_sec=1.0, overlap=0.5, start_offset_sec=0.0):
-    """Split signal into overlapping windows. start_times are in seconds, offset by start_offset_sec."""
+    """Split signal into overlapping windows; start_times are offset by start_offset_sec."""
     n_samples = signal.shape[1]
     window_size = int(window_sec * fs)
     step_size = int(window_size * (1 - overlap))
@@ -96,13 +91,14 @@ if __name__ == "__main__":
     patient = patients[0]
     fs, seizure_intervals = load_info(data_dir, patient)
     recordings = list_recordings(data_dir, patient)
-    print(f"Patient {patient}: fs={fs}, {len(seizure_intervals)} seizures, {len(recordings)} recordings")
-    
+    print(f"Patient {patient}: fs={fs}, "
+          f"{len(seizure_intervals)} seizures, {len(recordings)} recordings")
+
     recording = recordings[0]
     signal = load_recording(data_dir, patient, recording)
     print(f"  {recording}: signal shape {signal.shape}")
-    
+
     offset = recording_start_seconds(recording)
     windows, start_times = window_signal(signal, fs, start_offset_sec=offset)
-    labels = label_windows(windows, start_times, seizure_intervals, window_sec=1.0)
+    labels = label_windows(start_times, seizure_intervals, window_sec=1.0)
     print(f"  {len(windows)} windows, {sum(labels)} ictal ({100*sum(labels)/len(labels):.2f}%)")

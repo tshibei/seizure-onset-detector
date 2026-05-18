@@ -8,10 +8,11 @@ ML baselines (logistic regression, random forest) with a temporal CNN.
 ## Quickstart
 
 ```bash
-git clone https://github.com/USER/seizure-detect
-cd seizure-detect
-pip install -e ".[dev]"
-pytest
+git clone https://github.com/tshibei/seizure-onset-detector
+cd seizure-onset-detector
+uv sync --all-extras
+uv run nbstripout --install   # strip notebook outputs on commit
+uv run pytest
 ```
 
 ## Methods

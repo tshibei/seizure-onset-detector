@@ -29,8 +29,8 @@ def load_info(path: Path) -> dict:
     """Load a .mat file, falling back to mat73 for v7.3 files."""
     try:
         return sio.loadmat(str(path), simplify_cells=True)
-    except NotImplementedError:
-        raise RuntimeError(f"{path} is v7.3; install mat73 (`uv add mat73`)")
+    except NotImplementedError as e:
+        raise RuntimeError(f"{path} is v7.3; install mat73 (`uv add mat73`)") from e
 
 
 def seizure_hours(info: dict) -> set[int]:
@@ -120,11 +120,14 @@ def verify(plan: dict[str, list[int]]) -> None:
 
     print("\n=== verify ===")
     print(f"missing:    {len(missing)}")
-    for x in missing:    print(f"  {x}")
+    for x in missing:    
+        print(f"  {x}")
     print(f"mismatched: {len(mismatched)}")
-    for x in mismatched: print(f"  {x}")
+    for x in mismatched: 
+        print(f"  {x}")
     print(f"unplanned:  {len(extras)}")
-    for x in extras:     print(f"  {x}")
+    for x in extras:     
+        print(f"  {x}")
     if not (missing or mismatched or extras):
         print("OK — all planned files present at expected size, no extras.")
 
