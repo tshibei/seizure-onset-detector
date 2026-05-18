@@ -7,9 +7,14 @@ htmlcov/
 .ruff_cache/
 .mypy_cache/
 .ipynb_checkpoints/
-data/
+datasets/
 *.edf
 *.npy
 *.pkl
 .DS_Store
 .env
+nohup.out
+*.log
+*.txt
+tmp/
+figures/*tmp.png
