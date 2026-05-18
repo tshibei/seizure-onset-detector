@@ -1,9 +1,10 @@
-# Seizure Onset Detection
+# Seizure Onset Detection on iEEG
+Automated seizure onset detection on intracranial EEG, comparing classical
+ML baselines (logistic regression, random forest) with a temporal CNN.
 
 ![tests](https://github.com/tshibei/seizure-onset-detector/actions/workflows/test.yml/badge.svg)
 
-Automated seizure onset detection on intracranial EEG, comparing classical
-ML baselines (logistic regression, random forest) with a temporal CNN.
+
 
 ## Quickstart
 
@@ -13,6 +14,14 @@ cd seizure-onset-detector
 uv sync --all-extras
 uv run nbstripout --install   # strip notebook outputs on commit
 uv run pytest
+```
+
+### Reproducing the dataset
+
+Seizure onset/offset times in the info files are in seconds from recording start (0-indexed), while hourly files are 1-indexed — a seizure at 297,000s (82.5h) is in `_83h.mat`. The cohort and per-patient file lists are defined declaratively in `scripts/download_swec.py`:
+
+```bash
+uv run python scripts/download_swec.py
 ```
 
 ## Methods
@@ -26,41 +35,9 @@ with per-patient annotation files (`IDxx_info.mat`) listing seizure onset
 and offset times in seconds from recording start.
  
 ### Cohort selection
- 
-**Inclusion criteria.** A patient was included if both of the following held:
- 
-1. At least 3 distinct seizure events were annotated.
-2. No more than 7 seizure annotations within any 4-hour window (excludes
-   patients with annotation patterns consistent with status epilepticus or
-   pipeline-level event subdivision).
-Among kept patients, the densest 4-hour window contains at most 4 seizures;
-among excluded patients, the densest contains at least 8. The threshold
-cleanly separates the two groups.
- 
-**Excluded patients (n=8).**
- 
-| Patient | Seizures | Densest 4h window | Reason |
-|---------|---------:|------------------:|--------|
-| ID01    | 2        | 1                 | <3 seizures |
-| ID02    | 2        | 1                 | <3 seizures |
-| ID08    | 70       | 67                | Dense clustering (suspected status epilepticus) |
-| ID09    | 27       | 8                 | Dense clustering |
-| ID11    | 2        | 1                 | <3 seizures |
-| ID14    | 60       | 34                | Dense clustering (suspected status epilepticus) |
-| ID15    | 2        | 1                 | <3 seizures |
-| ID17    | 2        | 1                 | <3 seizures |
- 
-For the three densely-clustered patients (ID08, ID09, ID14), the
-annotation pattern is consistent with either status epilepticus or an
-annotation pipeline that subdivided a single prolonged event into many
-short sub-events. Treating these as independent training examples would
-inflate per-patient seizure counts without contributing independent
-information, and would also compromise leave-one-patient-out evaluation
-by giving a small number of patients disproportionate weight.
+We include patients with at least 3 annotated seizures and fewer than 8 seizures in any 4-hour window. The density criterion excludes patients whose annotations are consistent with status epilepticus or pipeline-level subdivision of a single prolonged event into many sub-events — including these would inflate per-patient seizure counts and give a small number of patients disproportionate weight in leave-one-patient-out evaluation.
 
-For each included patient, we additionally include 4 interictal hours
-distributed across the recording to provide clean negative examples and
-support false-positives-per-hour estimation.
+8 of 18 patients were excluded: ID01, ID02, ID11, ID15, ID17 (<3 seizures); ID08, ID09, ID14 (dense clustering). The remaining 10 patients form the study cohort. For each, we also download 4 interictal hours spaced across the recording to provide negative examples and support false-positives-per-hour estimation.
 
 ### Final cohort
 We use 10 patients from the [SWEC-ETHZ iEEG dataset](https://ieeg-swez.ethz.ch/),
@@ -86,40 +63,54 @@ in mind.*
 
 ![Seizures per patient](figures/seizures_per_patient.png)
 
-*Seizure occurrence across downloaded recordings for each patient. Files are
-labeled by recording hour (relative to monitoring start). Most patients have
-1–2 seizures per affected file; ID04 (15h) and ID10 (18h) each contain two.*
+*Seizure occurrence across downloaded recordings.*
 
 ![Seizure duration](figures/seizure_duration_histogram.png)
 
-*Most seizures are <90s.*
+*Most seizures are <1.5 minutes.*
 
-### Reproducing the cohort
- 
-The cohort and per-patient file lists are defined declaratively in
-`scripts/download_swec.py`, which reads each patient's `_info.mat` file
-to derive the relevant hourly files. Note that seizure onset/offset times
-in the info files are reported in seconds from recording start
-(0-indexed), while hourly files are named with 1-indexed hour numbers —
-a seizure starting at 297,000 seconds (82.5h) is contained in `_83h.mat`.
- 
-To reproduce the cohort:
- 
-```bash
-uv run python scripts/download_swec.py
-```
- 
+
+### Features
+
+We extract five feature families per 1-second window with 50% overlap, computed per channel and pooled across channels using mean and maximum:
+- Line length (sum of absolute first differences)
+- Band power in 5 standard EEG bands (delta 0.5–4 Hz, theta 4–8 Hz, alpha 8–13 Hz, beta 13–30 Hz, gamma 30–80 Hz)
+- Spectral edge frequency (SEF95)
+- Hjorth parameters (activity, mobility, complexity)
+- Energy ratio (Bartolomei et al. 2008): fast/slow band power
+
+![Features over time](figures/features_over_time.png)
+
+*Features over 1-second windows around seizures in two patients (±60 s, seizure shaded). ID03 shows sharp elevation across features; ID18 is subtler, with energy ratio unresponsive — motivating a multi-feature approach.*
+
+![Line length heatmaps for two patients](figures/line_length_heatmaps.png)
+
+*Line length per channel for the same seizures. ID03's seizure recruits all channels uniformly; ID18's is focal and includes a persistent artifact on channel 20 — motivating both mean and max pooling.*
+
+### Classifiers
+
+### Evaluation
+
+## Repository structure
 
 
 ## Status
 
-Work in progress — see `notebooks/` for current results.
+Complete: data pipeline, features, and EDA validation. Classifier and results coming.
 
 ## Results
 
-TBD (Day 3+).
+TBD.
 
 ## Limitations
 
+### Sub-sampling of recordings
 - We sub-sampled the long-term recordings, prioritizing files containing seizures plus interictal context. Ictal fraction in the downloaded subset is therefore much higher than in the full continuous recording.  
+
 - FPR/hour is computed on a sub-sampled interictal set rather than continuous monitoring; deployment FPR would likely be higher.
+
+### Features at recording level
+- Recording-level pooling does not exploit per-channel onset zone information (see `Methods/Features`)
+
+### No held-out test set
+LOOCV uses every patient for both training and evaluation across folds. Per-patient AUPRC reported in Results reflects within-cohort generalization; performance on patients outside SWEC-ETHZ is not assessed.
