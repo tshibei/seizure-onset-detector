@@ -18,3 +18,4 @@ nohup.out
 *.txt
 tmp/
 figures/*tmp.png
+notebooks/*tmp.ipynb

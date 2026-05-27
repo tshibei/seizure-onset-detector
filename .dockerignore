@@ -7,3 +7,4 @@ notebooks/
 data/
 .ipynb_checkpoints/
 .github/
+notebooks/*tmp.ipynb
