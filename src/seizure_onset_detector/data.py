@@ -6,6 +6,7 @@ import re
 
 import numpy as np
 import scipy.io
+import scipy.signal
 
 
 def list_patients(data_dir: str):
@@ -43,6 +44,26 @@ def load_recording(data_dir: str, patient_id: str, recording_id: str):
     """Load an iEEG recording. Returns array of shape (n_channels, n_samples)."""
     file = f"{data_dir}/ID{patient_id}_{recording_id}.mat"
     return scipy.io.loadmat(file)["EEG"]
+
+def notch_filter(signal, fs, freq=50.0, q=30.0):
+    """Notch-filter every channel at `freq` Hz (default 50 Hz mains)."""
+    b, a = scipy.signal.iirnotch(freq, Q=q, fs=fs)
+    return scipy.signal.filtfilt(b, a, signal, axis=-1)
+
+def normalize_recording(signal, scale=1.4826):
+    """Per-channel robust z-score: (x - median) / (scale * MAD), per channel.
+
+    signal: (n_channels, n_samples). Returns the same shape. Stats are computed
+    from this recording's own samples, so applying it before windowing makes
+    channel amplitudes comparable (features pool across channels) without using
+    any cross-recording or label information. scale=1.4826 makes MAD a consistent
+    estimator of the standard deviation for Gaussian data; flat channels (MAD=0)
+    map to all-zeros rather than dividing by zero.
+    """
+    median = np.median(signal, axis=1, keepdims=True)
+    mad = np.median(np.abs(signal - median), axis=1, keepdims=True)
+    denom = scale * np.where(mad > 0, mad, 1.0)
+    return (signal - median) / denom
 
 def load_cohort(cohort_file="scripts/download_manifest.json"):
     """Load the manifest. Keys are patient IDs (no 'ID' prefix), values are recording-hour ints."""
@@ -98,6 +119,7 @@ if __name__ == "__main__":
     signal = load_recording(data_dir, patient, recording)
     print(f"  {recording}: signal shape {signal.shape}")
 
+    signal = normalize_recording(signal)
     offset = recording_start_seconds(recording)
     windows, start_times = window_signal(signal, fs, start_offset_sec=offset)
     labels = label_windows(start_times, seizure_intervals, window_sec=1.0)
