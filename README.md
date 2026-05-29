@@ -69,8 +69,11 @@ in mind.*
 
 *Most seizures are <1.5 minutes.*
 
+### Signal Processing
+A notch filter of 50 Hz is applied. Note that the dataset is originally bandpass filtered from 0.5 - 120 Hz. 
 
 ### Features
+Signals were MAD_normalized per channel and recording before feature extraction. 
 
 We extract five feature families per 1-second window with 50% overlap, computed per channel and pooled across channels using mean and maximum:
 - Line length (sum of absolute first differences)
@@ -88,8 +91,14 @@ We extract five feature families per 1-second window with 50% overlap, computed 
 *Line length per channel for the same seizures. ID03's seizure recruits all channels uniformly; ID18's is focal and includes a persistent artifact on channel 20 — motivating both mean and max pooling.*
 
 ### Classifiers
+Classical ML: logistic regression, random forest, XGBoost, all with class weights to handle class imbalance; implemented with `sklearn`;
+
+Binary per-window scores (window size of one second, step size of 0.5s) are considered as alarms. Alarms are converted to seizure detections if an alarm is sustained for at least three seconds, merged for gaps within five seconds. This helps to debounce the alarm detection. A 5min seizure refractory period is imposed, meaning that there will not be multiple seizure detections within 5min of a seizure detection. 
 
 ### Evaluation
+Leave one patient out cross valuation was implemented. Features were MAD-normalized in the training set, and the parameters from the training set were used to normalize the test set for each fold. 
+
+The metrics used for evaluation are event-based, with reference to the SzCORE Framework. Note that scalp-tuned tolerances are applied to intracranial data, and FP/h is reported instead due to non-continuous hourly recordings downloaded in consideration of memory capacity with sufficient number of patients for analysis.
 
 ## Repository structure
 
@@ -100,7 +109,25 @@ Complete: data pipeline, features, and EDA validation. Classifier and results co
 
 ## Results
 
-TBD.
+### Classical ML Baselines: Logistic Regression, Random Forest, XGBoost
+The threshold-free metric AUPRC showed the best performance in the random forest model. Random Forest 0.79 > XGBoost 0.74 > Logistic Regression 0.54. 
+
+The operating point is chosen to reach the clinical target of false alarm rate of 0.06/h (to match SOTA performance in Sun et al, 2022, IEEE Journal of Biomedical and Health Informatics using transformers and Truong et al., 2018, Neural Networks using CNNs) if it can reach it, otherwise at its FA-floor. 
+
+![Baseline curves](figures/baseline_curves.png)
+
+| model         |   AUPRC |   FA/h |   sens |   precision |   latency (s) | FA/h at target (0.06/h)?   |
+|:--------------|--------:|-------:|-------:|------------:|----------:|:---------------------------|
+| logistic      |  0.5434 | 0.1577 |  0.185 |       0.6   |      35.8 | floor >> target            |
+| random_forest |  0.7937 | 0.0595 |  0.502 |       0.788 |      26.1 | at target                  |
+| xgboost       |  0.7399 | 0.0641 |  0.173 |       1     |      18.5 | floor > target             |
+
+### Failure Mode Analysis
+**Sensitivity floor in Random Forest model:** RF event sensitivity plateaus at ~0.68 across a wide threshold band (FA/h 0.4–1.0); loosening the threshold past that adds false alarms, not detections. So roughly a third of seizure events are missed regardless of operating point. This is consistent with the focal seizures seen in EDA — ID18's onset recruits only channels ~12–14 and ~37–41, and mean/max pooling across all 64 channels dilutes a spatially focal onset into the background. Generalized seizures (ID03, all channels) may be caught successfully, versus focal ones. Potential fix include per-channel or top-k channel features instead of global pooling.
+
+**Single global threshold underperforms per-patient tuning:** The black mean-envelope reaches higher sensitivity at the floor/target FA/h, but a shared threshold across patients caps much lower — the gap is the cost of one threshold over a heterogeneous cohort, visible in how widely the per-patient FROC curves spread. Some patients are detectable, some plateau well below 1.0 even at 10 FA/h. Future work: per-patient normalization or calibration.
+
+**Poor AUPRC of Logistic Regression:** The AUPRC of logistic regression is at 0.54 — pooled linear features barely separate ictal from interictal. This is the expected baseline floor and the motivation for the nonlinear models.
 
 ## Limitations
 
